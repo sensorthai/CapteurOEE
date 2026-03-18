@@ -1,0 +1,5 @@
+{
+  "name": "Industrial OS - OEE Dashboard",
+  "description": "Production-grade OEE dashboard system integrated with ThingsBoard, supporting multi-factory architecture, shift management, downtime classification, and Andon alerts.",
+  "requestFramePermissions": []
+}
