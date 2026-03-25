@@ -1,6 +1,12 @@
 export type MachineStatus = "RUNNING" | "IDLE" | "BREAKDOWN";
 export type DowntimeType = "PLANNED" | "UNPLANNED";
 
+export interface Factory {
+  id: string;
+  name: string;
+  oeeThreshold?: number;
+}
+
 export interface Machine {
   id: string;
   name: string;
@@ -8,6 +14,7 @@ export interface Machine {
   factoryId: string;
   status: MachineStatus;
   idealCycleTime: number; // seconds
+  oeeThreshold: number; // target OEE percentage (e.g., 75)
 }
 
 export interface Shift {
@@ -49,19 +56,9 @@ export interface AndonEvent {
 }
 
 export const db = {
-  factories: [
-    { id: "F1", name: "Factory A - Sector 4" },
-    { id: "F2", name: "Factory B - Sector 1" },
-  ],
-  lines: [
-    { id: "L1", name: "Line 04", factoryId: "F1" },
-    { id: "L2", name: "Line 05", factoryId: "F1" },
-  ],
-  machines: [
-    { id: "M1", name: "CNC Milling Center 04", lineId: "L1", factoryId: "F1", status: "RUNNING", idealCycleTime: 42 },
-    { id: "M2", name: "Lathe 02", lineId: "L1", factoryId: "F1", status: "IDLE", idealCycleTime: 30 },
-    { id: "M3", name: "Assembly Robot 1", lineId: "L2", factoryId: "F1", status: "RUNNING", idealCycleTime: 15 },
-  ] as Machine[],
+  factories: [] as Factory[],
+  lines: [],
+  machines: [] as Machine[],
   shifts: [
     { id: "S1", name: "Morning Shift", startTime: "06:00", endTime: "14:00" },
     { id: "S2", name: "Afternoon Shift", startTime: "14:00", endTime: "22:00" },

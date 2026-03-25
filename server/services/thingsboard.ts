@@ -1,77 +1,110 @@
-import { WebSocketServer } from "ws";
-import { db, Machine, Telemetry, DowntimeEvent } from "../db";
-import { getCurrentShift } from "./shift";
-import { checkAndonAlerts } from "./andon";
+const TB_BASE_URL = "https://iot1.wsa.cloud/api";
 
-export function startThingsBoardSimulation(wss: WebSocketServer) {
-  setInterval(() => {
-    const currentShift = getCurrentShift();
-    if (!currentShift) return;
+export class TBError extends Error {
+  constructor(public status: number, public statusText: string, message: string) {
+    super(`${message}: ${status} ${statusText}`);
+    this.name = "TBError";
+  }
+}
 
-    db.machines.forEach(machine => {
-      // Simulate telemetry
-      const lastTelemetry = db.telemetry.slice().reverse().find(t => t.machineId === machine.id && t.shiftId === currentShift.id);
-      
-      let goodCount = lastTelemetry ? lastTelemetry.goodCount : 0;
-      let rejectCount = lastTelemetry ? lastTelemetry.rejectCount : 0;
-      let status = machine.status;
+export class ThingsBoardService {
+  private token: string;
 
-      // Random state changes
-      if (Math.random() < 0.05) {
-        const statuses: ("RUNNING" | "IDLE" | "BREAKDOWN")[] = ["RUNNING", "IDLE", "BREAKDOWN"];
-        status = statuses[Math.floor(Math.random() * statuses.length)];
-        machine.status = status;
+  constructor(token: string) {
+    this.token = token.startsWith("Bearer ") ? token.slice(7) : token;
+  }
 
-        // Handle downtime events
-        if (status === "IDLE" || status === "BREAKDOWN") {
-          const activeDowntime = db.downtime.find(d => d.machineId === machine.id && d.endTime === null);
-          if (!activeDowntime) {
-            db.downtime.push({
-              id: Math.random().toString(36).substring(7),
-              machineId: machine.id,
-              startTime: Date.now(),
-              endTime: null,
-              type: status === "BREAKDOWN" ? "UNPLANNED" : "PLANNED",
-              reason: status === "BREAKDOWN" ? "Machine Fault" : "Idle",
-              shiftId: currentShift.id
-            });
-          }
-        } else if (status === "RUNNING") {
-          const activeDowntime = db.downtime.find(d => d.machineId === machine.id && d.endTime === null);
-          if (activeDowntime) {
-            activeDowntime.endTime = Date.now();
-          }
-        }
-      }
+  private get headers() {
+    return {
+      "X-Authorization": `Bearer ${this.token}`,
+      "Accept": "application/json",
+      "Content-Type": "application/json"
+    };
+  }
 
-      // Simulate production
-      if (status === "RUNNING") {
-        goodCount += Math.floor(Math.random() * 5);
-        if (Math.random() < 0.1) {
-          rejectCount += 1;
-        }
-      }
+  private async handleResponse(response: any, context: string) {
+    if (!response.ok) throw new TBError(response.status, response.statusText, context);
+    const text = await response.text();
+    try {
+      return text ? JSON.parse(text) : {};
+    } catch (e) {
+      return {};
+    }
+  }
 
-      const telemetry: Telemetry = {
-        machineId: machine.id,
-        timestamp: Date.now(),
-        status,
-        goodCount,
-        rejectCount,
-        shiftId: currentShift.id
-      };
+  async getUserInfo() {
+    const response = await fetch(`${TB_BASE_URL}/auth/user`, { headers: this.headers });
+    return this.handleResponse(response, "TB User Info Error");
+  }
 
-      db.telemetry.push(telemetry);
+  async getAssets(pageSize = 100, page = 0, type?: string) {
+    let url = `${TB_BASE_URL}/assetInfos/all?pageSize=${pageSize}&page=${page}`;
+    if (type) url += `&type=${type}`;
+    
+    const response = await fetch(url, { headers: this.headers });
+    return this.handleResponse(response, "TB Assets Error");
+  }
 
-      // Check Andon alerts
-      checkAndonAlerts(machine.id);
+  async getDevices(pageSize = 100, page = 0, type?: string) {
+    let url = `${TB_BASE_URL}/deviceInfos/all?pageSize=${pageSize}&page=${page}`;
+    if (type) url += `&type=${type}`;
 
-      // Broadcast to clients
-      wss.clients.forEach(client => {
-        if (client.readyState === 1) { // OPEN
-          client.send(JSON.stringify({ type: "TELEMETRY", data: telemetry }));
-        }
-      });
+    const response = await fetch(url, { headers: this.headers });
+    return this.handleResponse(response, "TB Devices Error");
+  }
+
+  async getLatestTelemetry(entityType: string, entityId: string, keys?: string[]) {
+    let url = `${TB_BASE_URL}/plugins/telemetry/${entityType}/${entityId}/values/timeseries`;
+    if (keys && keys.length > 0) url += `?keys=${keys.join(",")}`;
+
+    const response = await fetch(url, { headers: this.headers });
+    return this.handleResponse(response, "TB Telemetry Error");
+  }
+
+  async getHistoricalTelemetry(entityType: string, entityId: string, keys: string[], startTs: number, endTs: number, limit = 1000) {
+    const url = `${TB_BASE_URL}/plugins/telemetry/${entityType}/${entityId}/values/timeseries?keys=${keys.join(",")}&startTs=${startTs}&endTs=${endTs}&limit=${limit}`;
+    const response = await fetch(url, { headers: this.headers });
+    return this.handleResponse(response, "TB Historical Telemetry Error");
+  }
+
+  async getAttributes(entityType: string, entityId: string, scope: "SERVER_SCOPE" | "SHARED_SCOPE" | "CLIENT_SCOPE" = "SERVER_SCOPE") {
+    const url = `${TB_BASE_URL}/plugins/telemetry/${entityType}/${entityId}/values/attributes/${scope}`;
+    const response = await fetch(url, { headers: this.headers });
+    return this.handleResponse(response, "TB Attributes Error");
+  }
+
+  async saveAsset(asset: { name: string; type: string; label?: string; additionalInfo?: any }) {
+    const response = await fetch(`${TB_BASE_URL}/asset`, {
+      method: "POST",
+      headers: this.headers,
+      body: JSON.stringify(asset)
     });
-  }, 5000); // Every 5 seconds
+    return this.handleResponse(response, "TB Save Asset Error");
+  }
+
+  async saveRelation(relation: { from: any; to: any; type: string; typeGroup?: string }) {
+    const response = await fetch(`${TB_BASE_URL}/relation`, {
+      method: "POST",
+      headers: this.headers,
+      body: JSON.stringify(relation)
+    });
+    return this.handleResponse(response, "TB Save Relation Error");
+  }
+
+  async deleteRelation(fromId: string, fromType: string, toId: string, toType: string, relationType: string) {
+    const url = `${TB_BASE_URL}/relation?fromId=${fromId}&fromType=${fromType}&relationType=${relationType}&toId=${toId}&toType=${toType}`;
+    const response = await fetch(url, {
+      method: "DELETE",
+      headers: this.headers
+    });
+    return this.handleResponse(response, "TB Delete Relation Error");
+  }
+
+  async getRelations(entityType: string, entityId: string, direction: "FROM" | "TO" = "FROM") {
+    const idParam = direction === "FROM" ? "fromId" : "toId";
+    const typeParam = direction === "FROM" ? "fromType" : "toType";
+    const url = `${TB_BASE_URL}/relations?${idParam}=${entityId}&${typeParam}=${entityType}`;
+    const response = await fetch(url, { headers: this.headers });
+    return this.handleResponse(response, "TB Get Relations Error");
+  }
 }

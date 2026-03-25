@@ -4,7 +4,6 @@ import { createServer } from "http";
 import { WebSocketServer } from "ws";
 import path from "path";
 import { setupRoutes } from "./server/routes";
-import { startThingsBoardSimulation } from "./server/services/thingsboard";
 
 async function startServer() {
   const app = express();
@@ -17,9 +16,6 @@ async function startServer() {
 
   // Setup API routes
   setupRoutes(app);
-
-  // Start IoT simulation
-  startThingsBoardSimulation(wss);
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {

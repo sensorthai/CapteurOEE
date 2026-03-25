@@ -64,3 +64,64 @@ export function calculateOEE(machineId: string, startTime: number, endTime: numb
     totalCount
   };
 }
+
+export function calculateFactoryOEE(factoryId: string, startTime: number, endTime: number) {
+  const factory = db.factories.find(f => f.id === factoryId);
+  if (!factory) return null;
+
+  const machinesInFactory = db.machines.filter(m => m.factoryId === factoryId);
+  if (machinesInFactory.length === 0) return null;
+
+  let totalRunTime = 0;
+  let totalPlannedDowntime = 0;
+  let totalUnplannedDowntime = 0;
+  let totalGoodCount = 0;
+  let totalRejectCount = 0;
+  let totalCount = 0;
+  let totalIdealCycleTimeCount = 0; // Sum of (idealCycleTime * totalCount) for all machines
+
+  let validMachinesCount = 0;
+
+  for (const machine of machinesInFactory) {
+    const oee = calculateOEE(machine.id, startTime, endTime);
+    if (oee) {
+      totalRunTime += oee.runTime;
+      totalPlannedDowntime += oee.plannedDowntime;
+      totalUnplannedDowntime += oee.unplannedDowntime;
+      totalGoodCount += oee.totalGoodCount;
+      totalRejectCount += oee.totalRejectCount;
+      totalCount += oee.totalCount;
+      totalIdealCycleTimeCount += (machine.idealCycleTime * oee.totalCount);
+      validMachinesCount++;
+    }
+  }
+
+  if (validMachinesCount === 0) return null;
+
+  const plannedProductionTime = (endTime - startTime) / 1000 * validMachinesCount; // seconds for all machines
+
+  // Availability
+  const availability = totalRunTime > 0 ? totalRunTime / (plannedProductionTime - totalPlannedDowntime) : 0;
+
+  // Performance
+  const performance = totalRunTime > 0 ? totalIdealCycleTimeCount / totalRunTime : 0;
+
+  // Quality
+  const quality = totalCount > 0 ? totalGoodCount / totalCount : 0;
+
+  // OEE
+  const oee = availability * performance * quality;
+
+  return {
+    availability: Math.min(1, Math.max(0, availability)),
+    performance: Math.min(1, Math.max(0, performance)),
+    quality: Math.min(1, Math.max(0, quality)),
+    oee: Math.min(1, Math.max(0, oee)),
+    runTime: totalRunTime,
+    plannedDowntime: totalPlannedDowntime,
+    unplannedDowntime: totalUnplannedDowntime,
+    totalGoodCount,
+    totalRejectCount,
+    totalCount
+  };
+}
