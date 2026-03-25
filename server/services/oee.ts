@@ -1,5 +1,6 @@
 import { db, Machine, Telemetry, DowntimeEvent } from "../db";
 import { getShiftStartEndTimes } from "./shift";
+import { eachDayOfInterval } from "date-fns";
 
 export function calculateOEE(machineId: string, startTime: number, endTime: number) {
   const machine = db.machines.find(m => m.id === machineId);
@@ -124,4 +125,48 @@ export function calculateFactoryOEE(factoryId: string, startTime: number, endTim
     totalRejectCount,
     totalCount
   };
+}
+
+export function calculateHistoricalOEE(machineId: string, startDate: Date, endDate: Date, shiftId?: string) {
+  const days = eachDayOfInterval({ start: startDate, end: endDate });
+  const shifts = shiftId ? db.shifts.filter(s => s.id === shiftId) : db.shifts;
+  
+  const history = [];
+  for (const day of days) {
+    for (const shift of shifts) {
+      const { start, end } = getShiftStartEndTimes(shift, day);
+      const oee = calculateOEE(machineId, start, end);
+      if (oee) {
+        history.push({
+          date: day.toISOString().split('T')[0],
+          shiftId: shift.id,
+          shiftName: shift.name,
+          ...oee
+        });
+      }
+    }
+  }
+  return history;
+}
+
+export function calculateFactoryHistoricalOEE(factoryId: string, startDate: Date, endDate: Date, shiftId?: string) {
+  const days = eachDayOfInterval({ start: startDate, end: endDate });
+  const shifts = shiftId ? db.shifts.filter(s => s.id === shiftId) : db.shifts;
+  
+  const history = [];
+  for (const day of days) {
+    for (const shift of shifts) {
+      const { start, end } = getShiftStartEndTimes(shift, day);
+      const oee = calculateFactoryOEE(factoryId, start, end);
+      if (oee) {
+        history.push({
+          date: day.toISOString().split('T')[0],
+          shiftId: shift.id,
+          shiftName: shift.name,
+          ...oee
+        });
+      }
+    }
+  }
+  return history;
 }

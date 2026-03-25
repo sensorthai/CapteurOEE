@@ -130,9 +130,13 @@ const SortableMachine: React.FC<SortableMachineProps> = ({ machine, t }) => {
         <span className="text-xs">{machine.name}</span>
       </div>
       <div className={cn(
-        "size-1.5 rounded-full",
-        machine.status === 'running' ? "bg-emerald-500" : "bg-rose-500"
-      )}></div>
+        "flex items-center justify-center",
+        (machine.status?.toUpperCase() === 'RUNNING' || machine.status === 'running') ? "text-emerald-500" : 
+        (machine.status?.toUpperCase() === 'IDLE' || machine.status === 'idle') ? "text-amber-500" : "text-rose-500"
+      )}>
+        {(machine.status?.toUpperCase() === 'RUNNING' || machine.status === 'running') ? <CheckCircle2 className="size-3" /> : 
+         (machine.status?.toUpperCase() === 'IDLE' || machine.status === 'idle') ? <PauseCircle className="size-3" /> : <AlertTriangle className="size-3" />}
+      </div>
     </div>
   );
 }
@@ -143,9 +147,11 @@ interface DroppableLineProps {
   machines: any[];
   t: any;
   isUnassigned?: boolean;
+  target?: number;
+  onTargetChange?: (target: number) => void;
 }
 
-const DroppableLine: React.FC<DroppableLineProps> = ({ id, name, machines, t, isUnassigned }) => {
+const DroppableLine: React.FC<DroppableLineProps> = ({ id, name, machines, t, isUnassigned, target, onTargetChange }) => {
   const { setNodeRef, isOver } = useSortable({
     id,
     disabled: true, // We only use it as a container for SortableContext
@@ -165,6 +171,20 @@ const DroppableLine: React.FC<DroppableLineProps> = ({ id, name, machines, t, is
           <Layers className="size-3 text-indigo-500" />
         )}
         <span className="text-xs font-bold text-neutral-300">{name}</span>
+        {!isUnassigned && onTargetChange && (
+          <div className="flex items-center gap-1.5 ml-4">
+            <span className="text-[9px] text-neutral-500 font-bold uppercase tracking-wider">{t.target}</span>
+            <input 
+              type="number" 
+              min="0" 
+              max="100" 
+              value={target || 85} 
+              onChange={(e) => onTargetChange(parseInt(e.target.value))}
+              className="w-10 bg-neutral-950 border border-neutral-800 rounded px-1 py-0.5 text-[10px] font-bold text-indigo-400 outline-none focus:border-indigo-500"
+            />
+            <span className="text-[9px] text-neutral-500 font-bold">%</span>
+          </div>
+        )}
         <span className="text-[10px] text-neutral-600 ml-auto">{machines.length} {t.machines}</span>
       </div>
       
@@ -195,17 +215,33 @@ export default function App() {
   const [telemetry, setTelemetry] = useState<any>(null);
   const [downtime, setDowntime] = useState<any[]>([]);
   const [andonAlerts, setAndonAlerts] = useState<any[]>([]);
+  const [shifts, setShifts] = useState<any[]>([
+    { id: '1', name: 'Morning', startTime: '08:00', endTime: '16:00', days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'] },
+    { id: '2', name: 'Afternoon', startTime: '16:00', endTime: '00:00', days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'] },
+    { id: '3', name: 'Night', startTime: '00:00', endTime: '08:00', days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'] },
+  ]);
   const [currentShift, setCurrentShift] = useState<any>(null);
   const [isManualDowntimeModalOpen, setIsManualDowntimeModalOpen] = useState(false);
   const [isThresholdModalOpen, setIsThresholdModalOpen] = useState(false);
+  const [isAddShiftModalOpen, setIsAddShiftModalOpen] = useState(false);
   const [isSidebarMinimized, setIsSidebarMinimized] = useState(false);
-  const [currentPage, setCurrentPage] = useState<'overview' | 'dashboard' | 'production' | 'downtime' | 'maintenance' | 'settings' | 'machine-detail'>('overview');
+  const [currentPage, setCurrentPage] = useState<'overview' | 'dashboard' | 'production' | 'downtime' | 'maintenance' | 'settings' | 'machine-detail' | 'analytics'>('overview');
   const [productionLines, setProductionLines] = useState<any[]>([]);
   const [isAddProductionLineModalOpen, setIsAddProductionLineModalOpen] = useState(false);
   const [isAddFactoryModalOpen, setIsAddFactoryModalOpen] = useState(false);
   const [selectedFactoryForLine, setSelectedFactoryForLine] = useState<string | null>(null);
   const [language, setLanguage] = useState<Language>(() => (localStorage.getItem('app_lang') as Language) || 'en');
+  const [oeeTargets, setOeeTargets] = useState<Record<string, number>>(() => {
+    const saved = localStorage.getItem('oee_targets');
+    return saved ? JSON.parse(saved) : {};
+  });
   const [activeId, setActiveId] = useState<string | null>(null);
+
+  const handleUpdateOeeTarget = (id: string, target: number) => {
+    const newTargets = { ...oeeTargets, [id]: target };
+    setOeeTargets(newTargets);
+    localStorage.setItem('oee_targets', JSON.stringify(newTargets));
+  };
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -427,6 +463,30 @@ export default function App() {
     }
   };
 
+  const handleAddShift = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    const name = formData.get('shiftName') as string;
+    const startTime = formData.get('startTime') as string;
+    const endTime = formData.get('endTime') as string;
+    const days = Array.from(formData.getAll('days')) as string[];
+
+    const newShift = {
+      id: Math.random().toString(36).substr(2, 9),
+      name,
+      startTime,
+      endTime,
+      days
+    };
+
+    setShifts([...shifts, newShift]);
+    setIsAddShiftModalOpen(false);
+  };
+
+  const handleDeleteShift = (id: string) => {
+    setShifts(shifts.filter(s => s.id !== id));
+  };
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'F12') {
@@ -506,26 +566,49 @@ export default function App() {
           return;
         }
 
-        const handleRes = async (res: Response, setter: (data: any) => void, context: string) => {
-          if (!res.ok) {
-            console.warn(`${context} failed with status ${res.status}`);
-            return;
-          }
+        const getJson = async (res: Response) => {
+          if (!res.ok) return null;
           const contentType = res.headers.get("content-type");
           if (contentType && contentType.includes("application/json")) {
-            setter(await res.json());
-          } else {
-            const text = await res.text();
-            console.error(`${context} expected JSON but got ${contentType}: ${text.slice(0, 100)}`);
+            return await res.json();
           }
+          return null;
         };
 
-        await Promise.all([
-          handleRes(telemetryRes, setTelemetry, "Telemetry"),
-          handleRes(oeeRes, setOeeData, "OEE"),
-          handleRes(downtimeRes, setDowntime, "Downtime"),
-          handleRes(andonRes, setAndonAlerts, "Andon")
+        const [telemetryData, oeeData, downtimeJson, andonJson] = await Promise.all([
+          getJson(telemetryRes),
+          getJson(oeeRes),
+          getJson(downtimeRes),
+          getJson(andonRes)
         ]);
+
+        // Auto-categorization logic
+        const enrichedDowntime = (downtimeJson || []).map((d: any) => {
+          if (!d.reason || d.reason === "Unknown" || d.reason === "" || d.reason === "Set up") {
+            // Check for matching Andon alerts
+            const matchingAndon = (andonJson || []).find((a: any) => 
+              a.machineId === d.machineId && 
+              a.startTime <= d.startTime && 
+              (a.endTime === null || a.endTime >= d.startTime)
+            );
+            
+            if (matchingAndon) {
+              return { ...d, reason: matchingAndon.reason, autoCategorized: true };
+            }
+            
+            // Check telemetry for breakdown status
+            if (telemetryData && telemetryData.status === 'BREAKDOWN') {
+              return { ...d, reason: t.downtimeReasonsList.machineFailure, autoCategorized: true };
+            }
+          }
+          return d;
+        });
+
+        if (telemetryData) setTelemetry(telemetryData);
+        if (oeeData) setOeeData(oeeData);
+        setDowntime(enrichedDowntime);
+        if (andonJson) setAndonAlerts(andonJson);
+
       } catch (err) {
         console.error("Fetch data error:", err);
       }
@@ -703,16 +786,28 @@ export default function App() {
             {!isSidebarMinimized && <span className="text-sm font-medium animate-in fade-in duration-300">{t.maintenance}</span>}
           </button>
           <button 
+            onClick={() => setCurrentPage('analytics')}
+            className={cn(
+              "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors",
+              isSidebarMinimized ? "justify-center" : "",
+              currentPage === 'analytics' ? "bg-neutral-800 text-neutral-100" : "text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100"
+            )}
+            title={isSidebarMinimized ? t.analytics : ""}
+          >
+            <BarChart2 className="size-5 shrink-0" />
+            {!isSidebarMinimized && <span className="text-sm font-medium animate-in fade-in duration-300">{t.analytics}</span>}
+          </button>
+          <button 
             onClick={() => setCurrentPage('downtime')}
             className={cn(
               "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors",
               isSidebarMinimized ? "justify-center" : "",
               currentPage === 'downtime' ? "bg-neutral-800 text-neutral-100" : "text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100"
             )}
-            title={isSidebarMinimized ? t.analytics : ""}
+            title={isSidebarMinimized ? t.downtime : ""}
           >
-            <BarChart2 className="size-5 shrink-0" />
-            {!isSidebarMinimized && <span className="text-sm font-medium animate-in fade-in duration-300">{t.analytics}</span>}
+            <TimerOff className="size-5 shrink-0" />
+            {!isSidebarMinimized && <span className="text-sm font-medium animate-in fade-in duration-300">{t.downtime}</span>}
           </button>
           <button 
             onClick={() => setCurrentPage('settings')}
@@ -827,36 +922,46 @@ export default function App() {
             <div className="space-y-8 animate-in fade-in duration-500">
               {/* KPI Cards Row */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                {[
-                  { label: t.oeeOverall, value: '82.5%', target: '85.0%', trend: '+2.0%', status: 'success' },
-                  { label: t.availability, value: '91.4%', target: '90.0%', trend: '+0.5%', status: 'success' },
-                  { label: t.performance, value: '93.1%', target: '95.0%', trend: '-0.2%', status: 'danger' },
-                  { label: t.qualityRate, value: '97.2%', target: '99.0%', trend: '+0.1%', status: 'success' },
-                ].map((kpi) => (
-                  <div key={kpi.label} className="bg-neutral-950 border border-neutral-800 rounded-xl p-6 hover:border-neutral-700 transition-colors">
-                    <div className="flex justify-between items-start mb-4">
-                      <span className="text-neutral-500 text-sm font-medium">{kpi.label}</span>
-                      <span className={cn(
-                        "text-xs font-bold flex items-center gap-1",
-                        kpi.status === 'success' ? "text-emerald-500" : "text-red-500"
-                      )}>
-                        {kpi.status === 'success' ? <TrendingUp className="size-3" /> : <TrendingDown className="size-3" />}
-                        {kpi.trend}
-                      </span>
-                    </div>
-                    <div className="flex items-end gap-3">
-                      <h3 className="text-4xl font-black tracking-tight">{kpi.value}</h3>
-                      <div className="h-8 w-24 mb-1">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <AreaChart data={Array.from({length: 10}).map((_, i) => ({ val: Math.random() * 20 + 60 }))}>
-                            <Area type="monotone" dataKey="val" stroke={kpi.status === 'success' ? "#10b981" : "#ef4444"} fill={kpi.status === 'success' ? "#10b98120" : "#ef444420"} strokeWidth={2} />
-                          </AreaChart>
-                        </ResponsiveContainer>
+                {(() => {
+                  const currentOeeTarget = selectedEntity?.type === 'factory' 
+                    ? (oeeTargets[selectedEntity.id] || 85) 
+                    : 85;
+                  const currentOee = 82.5; // Mock OEE for now
+                  
+                  return [
+                    { label: t.oeeOverall, value: `${currentOee.toFixed(1)}%`, target: `${currentOeeTarget.toFixed(1)}%`, trend: '+2.0%', status: currentOee >= currentOeeTarget ? 'success' : 'danger' },
+                    { label: t.availability, value: '91.4%', target: '90.0%', trend: '+0.5%', status: 'success' },
+                    { label: t.performance, value: '93.1%', target: '95.0%', trend: '-0.2%', status: 'danger' },
+                    { label: t.qualityRate, value: '97.2%', target: '99.0%', trend: '+0.1%', status: 'success' },
+                  ].map((kpi) => (
+                    <div key={kpi.label} className="bg-neutral-950 border border-neutral-800 rounded-xl p-6 hover:border-neutral-700 transition-colors">
+                      <div className="flex justify-between items-start mb-4">
+                        <span className="text-neutral-500 text-sm font-medium">{kpi.label}</span>
+                        <span className={cn(
+                          "text-xs font-bold flex items-center gap-1",
+                          kpi.status === 'success' ? "text-emerald-500" : "text-red-500"
+                        )}>
+                          {kpi.status === 'success' ? <TrendingUp className="size-3" /> : <TrendingDown className="size-3" />}
+                          {kpi.trend}
+                        </span>
                       </div>
+                      <div className="flex items-end gap-3">
+                        <h3 className={cn(
+                          "text-4xl font-black tracking-tight",
+                          kpi.label === t.oeeOverall ? (kpi.status === 'success' ? "text-emerald-500" : "text-red-500") : "text-neutral-100"
+                        )}>{kpi.value}</h3>
+                        <div className="h-8 w-24 mb-1">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <AreaChart data={Array.from({length: 10}).map((_, i) => ({ val: Math.random() * 20 + 60 }))}>
+                              <Area type="monotone" dataKey="val" stroke={kpi.status === 'success' ? "#10b981" : "#ef4444"} fill={kpi.status === 'success' ? "#10b98120" : "#ef444420"} strokeWidth={2} />
+                            </AreaChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </div>
+                      <p className="text-[10px] text-neutral-500 mt-4 uppercase font-bold tracking-widest">{t.target}: {kpi.target}</p>
                     </div>
-                    <p className="text-[10px] text-neutral-500 mt-4 uppercase font-bold tracking-widest">{t.target}: {kpi.target}</p>
-                  </div>
-                ))}
+                  ));
+                })()}
               </div>
 
               {/* Main Charts Row */}
@@ -1071,16 +1176,18 @@ export default function App() {
                 {machines
                   .filter(m => !selectedEntity || selectedEntity.type !== 'factory' || m.factoryId === selectedEntity.id)
                   .map((machine, idx) => {
-                  // Mock some data for each machine to make it look like the reference
+                  // Use real status if available, otherwise fallback to mock
                   const isSelected = selectedEntity?.id === machine.id;
-                  const status = idx % 4 === 0 ? 'RUNNING' : idx % 4 === 1 ? 'IDLE' : idx % 4 === 2 ? 'BREAKDOWN' : 'RUNNING';
+                  const status = (machine.status || (idx % 4 === 0 ? 'RUNNING' : idx % 4 === 1 ? 'IDLE' : idx % 4 === 2 ? 'BREAKDOWN' : 'RUNNING')).toUpperCase();
                   const utilization = 60 + Math.random() * 30;
+                  const lineTarget = machine.productionLineId ? (oeeTargets[machine.productionLineId] || 85) : (oeeTargets[machine.factoryId] || 85);
                   const oee = 50 + Math.random() * 20;
                   const quality = 90 + Math.random() * 8;
                   const goodParts = 20 + Math.floor(Math.random() * 50);
                   const scrap = Math.floor(Math.random() * 5);
                   const cycleTime = (2 + Math.random()).toFixed(2);
                   const targetCycleTime = "2.23";
+                  const isBelowTarget = oee < lineTarget;
                   
                   return (
                     <div 
@@ -1106,9 +1213,16 @@ export default function App() {
                             status === 'IDLE' ? "bg-amber-500/20 text-amber-500" : "bg-red-500/20 text-red-500"
                           )}>
                             {status === 'RUNNING' ? <CheckCircle2 className="size-5" /> : 
-                             status === 'IDLE' ? <PauseCircle className="size-5" /> : <AlertCircle className="size-5" />}
+                             status === 'IDLE' ? <PauseCircle className="size-5" /> : <AlertTriangle className="size-5" />}
                           </div>
-                          <h3 className="font-black text-lg uppercase tracking-tight">{machine.name}</h3>
+                          <div>
+                            <h3 className="font-black text-lg uppercase tracking-tight leading-none">{machine.name}</h3>
+                            <p className={cn(
+                              "text-[10px] font-bold uppercase tracking-widest mt-1",
+                              status === 'RUNNING' ? "text-emerald-500" : 
+                              status === 'IDLE' ? "text-amber-500" : "text-red-500"
+                            )}>{status}</p>
+                          </div>
                         </div>
                         <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest italic">{t.firstShift}</span>
                       </div>
@@ -1181,7 +1295,10 @@ export default function App() {
                           </div>
                           <div>
                             <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest mb-1">OEE</p>
-                            <p className="text-sm font-bold text-neutral-100">{oee.toFixed(2)}%</p>
+                            <p className={cn(
+                              "text-sm font-bold",
+                              isBelowTarget ? "text-red-500" : "text-emerald-500"
+                            )}>{oee.toFixed(2)}% <span className="text-[10px] text-neutral-500 font-normal">({lineTarget}%)</span></p>
                           </div>
                         </div>
                       </div>
@@ -1201,48 +1318,57 @@ export default function App() {
                   <div className="flex items-center justify-between">
                     <h3 className="text-xs font-bold uppercase tracking-widest text-neutral-500">{t.lineOeeBreakdown}</h3>
                     <div className="flex gap-2">
-                      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">{t.target}: 85%</span>
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+                        {t.target}: {selectedEntity?.type === 'factory' ? (oeeTargets[selectedEntity.id] || 85) : 85}%
+                      </span>
                     </div>
                   </div>
                   <div className="grid grid-cols-4 gap-4">
-                    <div className="bg-neutral-950 p-4 rounded-xl border border-neutral-800">
-                      <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest mb-1">{t.totalLineOee}</p>
-                      <p className="text-2xl font-black text-neutral-100">82.5%</p>
-                      <div className="mt-2 h-1 w-full bg-neutral-800 rounded-full overflow-hidden">
-                        <div className="bg-emerald-500 h-full" style={{ width: '82.5%' }}></div>
-                      </div>
-                      <p className="mt-2 text-[10px] text-emerald-500 font-bold flex items-center gap-1">
-                        <TrendingUp className="size-3" /> +1.2% from last hour
-                      </p>
-                    </div>
-                    <div className="bg-neutral-950 p-4 rounded-xl border border-neutral-800">
-                      <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest mb-1">{t.stampingSection}</p>
-                      <p className="text-2xl font-black text-neutral-100">78.1%</p>
-                      <div className="mt-2 h-1 w-full bg-neutral-800 rounded-full overflow-hidden">
-                        <div className="bg-amber-500 h-full" style={{ width: '78.1%' }}></div>
-                      </div>
-                      <p className="mt-2 text-[10px] text-red-500 font-bold flex items-center gap-1">
-                        <TrendingDown className="size-3" /> -2.4% {t.bottleneckDetected}
-                      </p>
-                    </div>
-                    <div className="bg-neutral-950 p-4 rounded-xl border border-neutral-800">
-                      <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest mb-1">{t.weldingSection}</p>
-                      <p className="text-2xl font-black text-neutral-100">91.4%</p>
-                      <div className="mt-2 h-1 w-full bg-neutral-800 rounded-full overflow-hidden">
-                        <div className="bg-emerald-500 h-full" style={{ width: '91.4%' }}></div>
-                      </div>
-                      <p className="mt-2 text-[10px] text-neutral-500 font-bold">{t.stablePerformance}</p>
-                    </div>
-                    <div className="bg-neutral-950 p-4 rounded-xl border border-neutral-800">
-                      <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest mb-1">{t.finishingSection}</p>
-                      <p className="text-2xl font-black text-neutral-100">84.0%</p>
-                      <div className="mt-2 h-1 w-full bg-neutral-800 rounded-full overflow-hidden">
-                        <div className="bg-emerald-500 h-full" style={{ width: '84%' }}></div>
-                      </div>
-                      <p className="mt-2 text-[10px] text-emerald-500 font-bold flex items-center gap-1">
-                        <TrendingUp className="size-3" /> +0.5%
-                      </p>
-                    </div>
+                    {(() => {
+                      const currentTarget = selectedEntity?.type === 'factory' ? (oeeTargets[selectedEntity.id] || 85) : 85;
+                      return (
+                        <>
+                          <div className="bg-neutral-950 p-4 rounded-xl border border-neutral-800">
+                            <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest mb-1">{t.totalLineOee}</p>
+                            <p className="text-2xl font-black text-neutral-100">82.5%</p>
+                            <div className="mt-2 h-1 w-full bg-neutral-800 rounded-full overflow-hidden">
+                              <div className={cn("h-full", 82.5 >= currentTarget ? "bg-emerald-500" : "bg-red-500")} style={{ width: '82.5%' }}></div>
+                            </div>
+                            <p className="mt-2 text-[10px] text-emerald-500 font-bold flex items-center gap-1">
+                              <TrendingUp className="size-3" /> +1.2% from last hour
+                            </p>
+                          </div>
+                          <div className="bg-neutral-950 p-4 rounded-xl border border-neutral-800">
+                            <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest mb-1">{t.stampingSection}</p>
+                            <p className="text-2xl font-black text-neutral-100">78.1%</p>
+                            <div className="mt-2 h-1 w-full bg-neutral-800 rounded-full overflow-hidden">
+                              <div className={cn("h-full", 78.1 >= currentTarget ? "bg-emerald-500" : "bg-amber-500")} style={{ width: '78.1%' }}></div>
+                            </div>
+                            <p className="mt-2 text-[10px] text-red-500 font-bold flex items-center gap-1">
+                              <TrendingDown className="size-3" /> -2.4% {t.bottleneckDetected}
+                            </p>
+                          </div>
+                          <div className="bg-neutral-950 p-4 rounded-xl border border-neutral-800">
+                            <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest mb-1">{t.weldingSection}</p>
+                            <p className="text-2xl font-black text-neutral-100">91.4%</p>
+                            <div className="mt-2 h-1 w-full bg-neutral-800 rounded-full overflow-hidden">
+                              <div className={cn("h-full", 91.4 >= currentTarget ? "bg-emerald-500" : "bg-red-500")} style={{ width: '91.4%' }}></div>
+                            </div>
+                            <p className="mt-2 text-[10px] text-neutral-500 font-bold">{t.stablePerformance}</p>
+                          </div>
+                          <div className="bg-neutral-950 p-4 rounded-xl border border-neutral-800">
+                            <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest mb-1">{t.finishingSection}</p>
+                            <p className="text-2xl font-black text-neutral-100">84.0%</p>
+                            <div className="mt-2 h-1 w-full bg-neutral-800 rounded-full overflow-hidden">
+                              <div className={cn("h-full", 84.0 >= currentTarget ? "bg-emerald-500" : "bg-amber-500")} style={{ width: '84%' }}></div>
+                            </div>
+                            <p className="mt-2 text-[10px] text-emerald-500 font-bold flex items-center gap-1">
+                              <TrendingUp className="size-3" /> +0.5%
+                            </p>
+                          </div>
+                        </>
+                      );
+                    })()}
                   </div>
                 </div>
                 {/* Machine Status Grid Summary */}
@@ -1480,6 +1606,15 @@ export default function App() {
             </div>
           )}
 
+          {currentPage === 'analytics' && (
+            <AnalyticsView 
+              t={t} 
+              token={token} 
+              selectedEntity={selectedEntity} 
+              language={language} 
+            />
+          )}
+
           {currentPage === 'downtime' && (
             <div className="space-y-6">
               <h2 className="text-2xl font-bold">Downtime Analysis</h2>
@@ -1531,6 +1666,84 @@ export default function App() {
                       </div>
                     </div>
                   </div>
+                </div>
+              </div>
+
+              {/* Detailed Events Table */}
+              <div className="bg-neutral-950 rounded-xl border border-neutral-800 overflow-hidden">
+                <div className="p-6 border-b border-neutral-800 flex justify-between items-center">
+                  <h3 className="font-bold">{t.downtimeSummary}</h3>
+                  <button 
+                    onClick={() => setIsManualDowntimeModalOpen(true)}
+                    className="flex items-center gap-2 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg transition-colors"
+                  >
+                    <Plus className="size-3" /> {t.logManualDowntime}
+                  </button>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="border-b border-neutral-800 bg-neutral-900/50">
+                        <th className="px-6 py-4 text-[10px] font-bold text-neutral-500 uppercase tracking-widest">{t.startTime}</th>
+                        <th className="px-6 py-4 text-[10px] font-bold text-neutral-500 uppercase tracking-widest">{t.endTime}</th>
+                        <th className="px-6 py-4 text-[10px] font-bold text-neutral-500 uppercase tracking-widest">{t.durationMin}</th>
+                        <th className="px-6 py-4 text-[10px] font-bold text-neutral-500 uppercase tracking-widest">{t.type}</th>
+                        <th className="px-6 py-4 text-[10px] font-bold text-neutral-500 uppercase tracking-widest">{t.reason}</th>
+                        <th className="px-6 py-4 text-[10px] font-bold text-neutral-500 uppercase tracking-widest">{t.comment}</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-neutral-800">
+                      {downtime.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="px-6 py-12 text-center text-neutral-500 italic text-sm">
+                            {t.noDowntimeEvents}
+                          </td>
+                        </tr>
+                      ) : (
+                        downtime.sort((a, b) => b.startTime - a.startTime).map((event) => {
+                          const duration = Math.round(((event.endTime || Date.now()) - event.startTime) / 1000 / 60);
+                          return (
+                            <tr key={event.id} className="hover:bg-neutral-900/30 transition-colors group">
+                              <td className="px-6 py-4 text-xs font-mono text-neutral-400">
+                                {new Date(event.startTime).toLocaleString()}
+                              </td>
+                              <td className="px-6 py-4 text-xs font-mono text-neutral-400">
+                                {event.endTime ? new Date(event.endTime).toLocaleString() : (
+                                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-red-500/10 text-red-500 font-bold uppercase text-[10px]">
+                                    <Activity className="size-3 animate-pulse" /> {t.active}
+                                  </span>
+                                )}
+                              </td>
+                              <td className="px-6 py-4 text-xs font-bold text-neutral-200">
+                                {duration}m
+                              </td>
+                              <td className="px-6 py-4">
+                                <span className={cn(
+                                  "text-[10px] font-bold px-2 py-0.5 rounded uppercase",
+                                  event.type === 'PLANNED' ? "bg-indigo-500/10 text-indigo-500" : "bg-red-500/10 text-red-500"
+                                )}>
+                                  {event.type === 'PLANNED' ? t.planned : t.unplanned}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4">
+                                <div className="flex flex-col gap-1">
+                                  <span className="text-sm font-bold text-neutral-100">{event.reason}</span>
+                                  {event.autoCategorized && (
+                                    <span className="text-[8px] font-bold text-indigo-500 uppercase tracking-widest flex items-center gap-1">
+                                      <Brain className="size-2" /> Auto-Categorized
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="px-6 py-4 text-xs text-neutral-500 italic max-w-xs truncate">
+                                {event.comment || '-'}
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </div>
@@ -1775,81 +1988,89 @@ export default function App() {
               </div>
 
               {/* OEE Performance Chart */}
-              <div className="bg-neutral-950 border border-neutral-800 rounded-2xl p-6 shadow-2xl">
-                <div className="flex items-center justify-between mb-6">
-                  <div>
-                    <h3 className="text-lg font-bold">OEE Performance</h3>
-                    <p className="text-xs text-neutral-500 uppercase font-bold tracking-widest mt-1">Hourly Trend vs Target</p>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <div className="flex items-center gap-2">
-                      <div className="size-2 rounded-full bg-indigo-500"></div>
-                      <span className="text-[10px] text-neutral-400 uppercase font-bold tracking-widest">Actual OEE</span>
+              {(() => {
+                const machineTarget = currentEntity.productionLineId 
+                  ? (oeeTargets[currentEntity.productionLineId] || 85) 
+                  : (oeeTargets[currentEntity.factoryId] || 85);
+                
+                return (
+                  <div className="bg-neutral-950 border border-neutral-800 rounded-2xl p-6 shadow-2xl">
+                    <div className="flex items-center justify-between mb-6">
+                      <div>
+                        <h3 className="text-lg font-bold">OEE Performance</h3>
+                        <p className="text-xs text-neutral-500 uppercase font-bold tracking-widest mt-1">Hourly Trend vs Target</p>
+                      </div>
+                      <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-2">
+                          <div className="size-2 rounded-full bg-indigo-500"></div>
+                          <span className="text-[10px] text-neutral-400 uppercase font-bold tracking-widest">Actual OEE</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="w-4 h-0.5 border-t border-dashed border-neutral-500"></div>
+                          <span className="text-[10px] text-neutral-400 uppercase font-bold tracking-widest">Target ({machineTarget}%)</span>
+                        </div>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <div className="w-4 h-0.5 border-t border-dashed border-neutral-500"></div>
-                      <span className="text-[10px] text-neutral-400 uppercase font-bold tracking-widest">Target ({currentEntity.oeeThreshold || 85}%)</span>
+                    <div className="h-64">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={[
+                          { hour: '8:00', oee: 52 },
+                          { hour: '9:00', oee: 68 },
+                          { hour: '10:00', oee: 45 },
+                          { hour: '11:00', oee: 92 },
+                          { hour: '12:00', oee: 88 },
+                          { hour: '13:00', oee: 75 },
+                          { hour: '14:00', oee: 82 },
+                          { hour: '15:00', oee: 95 },
+                        ]}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#262626" vertical={false} />
+                          <XAxis 
+                            dataKey="hour" 
+                            stroke="#525252" 
+                            fontSize={10} 
+                            tickLine={false} 
+                            axisLine={false}
+                            dy={10}
+                          />
+                          <YAxis 
+                            stroke="#525252" 
+                            fontSize={10} 
+                            tickLine={false} 
+                            axisLine={false}
+                            domain={[0, 100]}
+                            tickFormatter={(val) => `${val}%`}
+                          />
+                          <Tooltip 
+                            contentStyle={{backgroundColor: '#0a0a0a', border: '1px solid #262626', borderRadius: '12px', fontSize: '12px'}}
+                            itemStyle={{color: '#818cf8'}}
+                            cursor={{stroke: '#262626'}}
+                          />
+                          <ReferenceLine 
+                            y={machineTarget} 
+                            stroke="#525252" 
+                            strokeDasharray="5 5"
+                            label={{ 
+                              position: 'right', 
+                              value: `Goal: ${machineTarget}%`, 
+                              fill: '#525252', 
+                              fontSize: 10,
+                              fontWeight: 'bold'
+                            }} 
+                          />
+                          <Line 
+                            type="monotone" 
+                            dataKey="oee" 
+                            stroke="#6366f1" 
+                            strokeWidth={3} 
+                            dot={{ fill: '#6366f1', strokeWidth: 2, r: 4, stroke: '#0a0a0a' }}
+                            activeDot={{ r: 6, strokeWidth: 0 }}
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
                     </div>
                   </div>
-                </div>
-                <div className="h-64">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={[
-                      { hour: '8:00', oee: 52 },
-                      { hour: '9:00', oee: 68 },
-                      { hour: '10:00', oee: 45 },
-                      { hour: '11:00', oee: 92 },
-                      { hour: '12:00', oee: 88 },
-                      { hour: '13:00', oee: 75 },
-                      { hour: '14:00', oee: 82 },
-                      { hour: '15:00', oee: 95 },
-                    ]}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#262626" vertical={false} />
-                      <XAxis 
-                        dataKey="hour" 
-                        stroke="#525252" 
-                        fontSize={10} 
-                        tickLine={false} 
-                        axisLine={false}
-                        dy={10}
-                      />
-                      <YAxis 
-                        stroke="#525252" 
-                        fontSize={10} 
-                        tickLine={false} 
-                        axisLine={false}
-                        domain={[0, 100]}
-                        tickFormatter={(val) => `${val}%`}
-                      />
-                      <Tooltip 
-                        contentStyle={{backgroundColor: '#0a0a0a', border: '1px solid #262626', borderRadius: '12px', fontSize: '12px'}}
-                        itemStyle={{color: '#818cf8'}}
-                        cursor={{stroke: '#262626'}}
-                      />
-                      <ReferenceLine 
-                        y={currentEntity.oeeThreshold || 85} 
-                        stroke="#525252" 
-                        strokeDasharray="5 5"
-                        label={{ 
-                          position: 'right', 
-                          value: `Goal: ${currentEntity.oeeThreshold || 85}%`, 
-                          fill: '#525252', 
-                          fontSize: 10,
-                          fontWeight: 'bold'
-                        }} 
-                      />
-                      <Line 
-                        type="monotone" 
-                        dataKey="oee" 
-                        stroke="#6366f1" 
-                        strokeWidth={3} 
-                        dot={{ fill: '#6366f1', strokeWidth: 2, r: 4, stroke: '#0a0a0a' }}
-                        activeDot={{ r: 6, strokeWidth: 0 }}
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
+                );
+              })()}
 
               {/* Hourly Stats Table */}
               <div className="bg-neutral-950 border border-neutral-800 rounded-2xl overflow-hidden shadow-2xl">
@@ -2024,6 +2245,53 @@ export default function App() {
 
                 <div className="pt-6 border-t border-neutral-800">
                   <div className="flex items-center justify-between mb-4">
+                    <h3 className="font-bold">{t.shiftManagement}</h3>
+                    <button 
+                      onClick={() => setIsAddShiftModalOpen(true)}
+                      className="flex items-center gap-2 px-3 py-1.5 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg text-xs font-bold transition-colors"
+                    >
+                      <Plus className="size-3" />
+                      {t.addShift}
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-1 gap-3">
+                    {shifts.map(shift => (
+                      <div key={shift.id} className="bg-neutral-900/50 p-4 rounded-lg border border-neutral-800 flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                          <div className="p-2 bg-indigo-500/10 rounded-lg">
+                            <Clock className="size-4 text-indigo-400" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-bold">{shift.name}</p>
+                            <p className="text-xs text-neutral-500">{shift.startTime} - {shift.endTime}</p>
+                            <div className="flex gap-1 mt-1">
+                              {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => (
+                                <span 
+                                  key={day} 
+                                  className={cn(
+                                    "text-[8px] px-1 rounded font-bold",
+                                    shift.days.includes(day) ? "bg-indigo-500/20 text-indigo-400" : "bg-neutral-800 text-neutral-600"
+                                  )}
+                                >
+                                  {day}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                        <button 
+                          onClick={() => handleDeleteShift(shift.id)}
+                          className="p-1.5 hover:bg-rose-500/10 text-neutral-500 hover:text-rose-500 rounded transition-colors"
+                        >
+                          <MinusCircle className="size-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="pt-6 border-t border-neutral-800">
+                  <div className="flex items-center justify-between mb-4">
                     <h3 className="font-bold">{t.assetHierarchy}</h3>
                     <button 
                       onClick={() => setIsAddFactoryModalOpen(true)}
@@ -2052,6 +2320,20 @@ export default function App() {
                             {factory.type === 'thingsboard' && (
                               <span className="text-[10px] bg-indigo-500/10 text-indigo-400 px-2 py-0.5 rounded uppercase font-bold tracking-widest ml-2 border border-indigo-500/20">ThingsBoard</span>
                             )}
+                            
+                            <div className="flex items-center gap-1.5 ml-4">
+                              <span className="text-[9px] text-neutral-500 font-bold uppercase tracking-wider">{t.target}</span>
+                              <input 
+                                type="number" 
+                                min="0" 
+                                max="100" 
+                                value={oeeTargets[factory.id] || 85} 
+                                onChange={(e) => handleUpdateOeeTarget(factory.id, parseInt(e.target.value))}
+                                className="w-10 bg-neutral-950 border border-neutral-800 rounded px-1 py-0.5 text-[10px] font-bold text-indigo-400 outline-none focus:border-indigo-500"
+                              />
+                              <span className="text-[9px] text-neutral-500 font-bold">%</span>
+                            </div>
+
                             <button 
                               onClick={() => {
                                 setSelectedFactoryForLine(factory.id);
@@ -2073,6 +2355,8 @@ export default function App() {
                                 name={line.name} 
                                 machines={machines.filter(m => m.factoryId === factory.id && m.productionLineId === line.id)}
                                 t={t}
+                                target={oeeTargets[line.id]}
+                                onTargetChange={(target) => handleUpdateOeeTarget(line.id, target)}
                               />
                             ))}
 
@@ -2106,9 +2390,13 @@ export default function App() {
                             <span className="text-xs">{machines.find(m => m.id === activeId)?.name}</span>
                           </div>
                           <div className={cn(
-                            "size-1.5 rounded-full",
-                            machines.find(m => m.id === activeId)?.status === 'running' ? "bg-emerald-500" : "bg-rose-500"
-                          )}></div>
+                            "flex items-center justify-center",
+                            (machines.find(m => m.id === activeId)?.status?.toUpperCase() === 'RUNNING' || machines.find(m => m.id === activeId)?.status === 'running') ? "text-emerald-500" : 
+                            (machines.find(m => m.id === activeId)?.status?.toUpperCase() === 'IDLE' || machines.find(m => m.id === activeId)?.status === 'idle') ? "text-amber-500" : "text-rose-500"
+                          )}>
+                            {(machines.find(m => m.id === activeId)?.status?.toUpperCase() === 'RUNNING' || machines.find(m => m.id === activeId)?.status === 'running') ? <CheckCircle2 className="size-3" /> : 
+                             (machines.find(m => m.id === activeId)?.status?.toUpperCase() === 'IDLE' || machines.find(m => m.id === activeId)?.status === 'idle') ? <PauseCircle className="size-3" /> : <AlertTriangle className="size-3" />}
+                          </div>
                         </div>
                       ) : null}
                     </DragOverlay>
@@ -2200,7 +2488,11 @@ export default function App() {
               </div>
               <div>
                 <label className="block text-xs font-medium text-neutral-400 mb-1">{t.reason}</label>
-                <input type="text" name="downtime_reason" required className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none" placeholder={t.reasonPlaceholder} />
+                <select name="downtime_reason" required className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                  {Object.entries(t.downtimeReasonsList).map(([key, value]) => (
+                    <option key={key} value={value as string}>{value as string}</option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className="block text-xs font-medium text-neutral-400 mb-1">{t.comment}</label>
@@ -2237,6 +2529,71 @@ export default function App() {
               <div className="flex justify-end gap-3 pt-4">
                 <button type="button" onClick={() => setIsThresholdModalOpen(false)} className="px-4 py-2 text-sm font-medium text-neutral-400 hover:text-white transition-colors">{t.cancel}</button>
                 <button type="submit" className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg transition-colors">{t.saveTarget}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Add Shift Modal */}
+      {isAddShiftModalOpen && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 w-full max-w-md shadow-2xl">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 bg-indigo-500/10 rounded-lg">
+                <Clock className="size-5 text-indigo-500" />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold">{t.addShift}</h2>
+                <p className="text-xs text-neutral-500">{t.defineShiftTimings}</p>
+              </div>
+            </div>
+            <form onSubmit={handleAddShift} className="space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-neutral-400 mb-1">{t.shiftName}</label>
+                <input 
+                  type="text" 
+                  name="shiftName" 
+                  required 
+                  autoFocus
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none" 
+                  placeholder="e.g. Morning Shift" 
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-neutral-400 mb-1">{t.startTime}</label>
+                  <input 
+                    type="time" 
+                    name="startTime" 
+                    required 
+                    className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none" 
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-neutral-400 mb-1">{t.endTime}</label>
+                  <input 
+                    type="time" 
+                    name="endTime" 
+                    required 
+                    className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none" 
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-neutral-400 mb-2">{t.assignedDays}</label>
+                <div className="flex flex-wrap gap-2">
+                  {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => (
+                    <label key={day} className="flex items-center gap-2 bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-1.5 cursor-pointer hover:bg-neutral-900 transition-colors">
+                      <input type="checkbox" name="days" value={day} className="size-3 rounded border-neutral-800 text-indigo-500 focus:ring-indigo-500 bg-neutral-900" />
+                      <span className="text-xs font-medium">{day}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div className="flex justify-end gap-3 pt-4">
+                <button type="button" onClick={() => setIsAddShiftModalOpen(false)} className="px-4 py-2 text-sm font-medium text-neutral-400 hover:text-white transition-colors">{t.cancel}</button>
+                <button type="submit" className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg transition-colors">{t.addShift}</button>
               </div>
             </form>
           </div>
@@ -2351,6 +2708,152 @@ export default function App() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function AnalyticsView({ t, token, selectedEntity, language }: { t: any, token: string | null, selectedEntity: any, language: string }) {
+  const [historyData, setHistoryData] = useState<any[]>([]);
+  const [startDate, setStartDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 7);
+    return d.toISOString().split('T')[0];
+  });
+  const [endDate, setEndDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [selectedShift, setSelectedShift] = useState<string>("");
+  const [shifts, setShifts] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/shifts")
+      .then(res => res.json())
+      .then(data => setShifts(data));
+  }, []);
+
+  const fetchHistory = useCallback(async () => {
+    if (!selectedEntity || !token) return;
+    setLoading(true);
+    try {
+      const entityType = selectedEntity.type === 'machine' ? 'DEVICE' : 'ASSET';
+      let url = `/api/thingsboard/oee-history/${entityType}/${selectedEntity.id}?startDate=${startDate}&endDate=${endDate}`;
+      if (selectedShift) url += `&shiftId=${selectedShift}`;
+      
+      const res = await fetch(url, {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      const data = await res.json();
+      setHistoryData(data);
+    } catch (error) {
+      console.error("Error fetching history:", error);
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedEntity, token, startDate, endDate, selectedShift]);
+
+  useEffect(() => {
+    fetchHistory();
+  }, [fetchHistory]);
+
+  return (
+    <div className="space-y-6 animate-in fade-in duration-500">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-neutral-950 p-4 rounded-xl border border-neutral-800">
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="space-y-1">
+            <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest">{t.startDate}</label>
+            <input 
+              type="date" 
+              value={startDate} 
+              onChange={(e) => setStartDate(e.target.value)}
+              className="block w-full bg-neutral-900 border-neutral-800 rounded-lg text-sm focus:ring-indigo-500 focus:border-indigo-500 p-2"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest">{t.endDate}</label>
+            <input 
+              type="date" 
+              value={endDate} 
+              onChange={(e) => setEndDate(e.target.value)}
+              className="block w-full bg-neutral-900 border-neutral-800 rounded-lg text-sm focus:ring-indigo-500 focus:border-indigo-500 p-2"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest">{t.shiftFilter}</label>
+            <select 
+              value={selectedShift} 
+              onChange={(e) => setSelectedShift(e.target.value)}
+              className="block w-full bg-neutral-900 border-neutral-800 rounded-lg text-sm focus:ring-indigo-500 focus:border-indigo-500 p-2"
+            >
+              <option value="">{t.allShifts}</option>
+              {shifts.map(s => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+        <button 
+          onClick={fetchHistory}
+          disabled={loading}
+          className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-lg text-sm font-bold transition-colors disabled:opacity-50 flex items-center gap-2"
+        >
+          {loading ? <Clock className="size-4 animate-spin" /> : <Filter className="size-4" />}
+          {t.applyFilters}
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 bg-neutral-950 p-6 rounded-xl border border-neutral-800">
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-lg font-bold flex items-center gap-2">
+              <TrendingUp className="size-5 text-indigo-500" />
+              {t.trendAnalysis}
+            </h3>
+          </div>
+          <div className="h-80">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={historyData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#262626" vertical={false} />
+                <XAxis dataKey="date" stroke="#525252" fontSize={10} />
+                <YAxis stroke="#525252" fontSize={10} domain={[0, 1]} tickFormatter={(val) => `${(val * 100).toFixed(0)}%`} />
+                <Tooltip 
+                  contentStyle={{backgroundColor: '#0a0a0a', border: '1px solid #262626', borderRadius: '8px'}}
+                  formatter={(value: any) => [`${(Number(value) * 100).toFixed(1)}%`, '']}
+                />
+                <Legend />
+                <Line type="monotone" dataKey="oee" name="OEE" stroke="#6366f1" strokeWidth={3} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+                <Line type="monotone" dataKey="availability" name={t.availability} stroke="#10b981" strokeWidth={2} strokeDasharray="5 5" dot={false} />
+                <Line type="monotone" dataKey="performance" name={t.performance} stroke="#f59e0b" strokeWidth={2} strokeDasharray="5 5" dot={false} />
+                <Line type="monotone" dataKey="quality" name={t.qualityRate} stroke="#8b5cf6" strokeWidth={2} strokeDasharray="5 5" dot={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="bg-neutral-950 p-6 rounded-xl border border-neutral-800">
+          <h3 className="text-lg font-bold mb-6">{t.historicalOee}</h3>
+          <div className="space-y-4 max-h-[320px] overflow-y-auto pr-2">
+            {historyData.map((item, idx) => (
+              <div key={`${item.date}-${item.shiftId}`} className="p-3 bg-neutral-900 rounded-lg border border-neutral-800 flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-bold text-neutral-100">{item.date}</p>
+                  <p className="text-[10px] text-neutral-500 uppercase tracking-widest">{item.shiftName}</p>
+                </div>
+                <div className="text-right">
+                  <p className={cn(
+                    "text-lg font-black",
+                    item.oee >= 0.8 ? "text-emerald-500" : item.oee >= 0.6 ? "text-amber-500" : "text-rose-500"
+                  )}>
+                    {(item.oee * 100).toFixed(1)}%
+                  </p>
+                  <p className="text-[10px] text-neutral-600 uppercase font-bold tracking-widest">OEE</p>
+                </div>
+              </div>
+            ))}
+            {historyData.length === 0 && !loading && (
+              <p className="text-sm text-neutral-500 italic text-center py-8">{t.noDataAvailable}</p>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

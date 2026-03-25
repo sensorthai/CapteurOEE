@@ -1,8 +1,9 @@
 import { Express } from "express";
 import { db } from "./db";
 import { getCurrentShift, getShiftStartEndTimes } from "./services/shift";
-import { calculateOEE, calculateFactoryOEE } from "./services/oee";
+import { calculateOEE, calculateFactoryOEE, calculateHistoricalOEE, calculateFactoryHistoricalOEE } from "./services/oee";
 import { ThingsBoardService, TBError } from "./services/thingsboard";
+import { eachDayOfInterval, parseISO } from "date-fns";
 
 export function setupRoutes(app: Express) {
   // Helper to get TB Service from request
@@ -251,6 +252,77 @@ export function setupRoutes(app: Express) {
     }
   });
 
+  app.get("/api/thingsboard/oee-history/:entityType/:entityId", async (req, res) => {
+    try {
+      const { entityType, entityId } = req.params;
+      const { startDate, endDate, shiftId } = req.query;
+      const tb = getTBService(req);
+      
+      if (!startDate || !endDate) {
+        return res.status(400).json({ error: "startDate and endDate are required" });
+      }
+
+      const start = parseISO(startDate as string);
+      const end = parseISO(endDate as string);
+      const days = eachDayOfInterval({ start, end });
+      
+      const selectedShift = shiftId ? db.shifts.find(s => s.id === shiftId) : null;
+      const shiftsToCalculate = selectedShift ? [selectedShift] : db.shifts;
+
+      const history = [];
+
+      // Fetch attributes once
+      const attributes = await tb.getAttributes(getTBEntityType(entityType), entityId, "SERVER_SCOPE");
+      const idealCycleTime = attributes.idealCycleTime || 30;
+
+      for (const day of days) {
+        for (const shift of shiftsToCalculate) {
+          const { start: shiftStart, end: shiftEnd } = getShiftStartEndTimes(shift, day);
+          
+          const keys = ["status", "good_count", "reject_count", "total_count", "cycle_time", "planned_time", "downtime"];
+          const telemetry = await tb.getHistoricalTelemetry(getTBEntityType(entityType), entityId, keys, shiftStart, shiftEnd, 1);
+          
+          let goodCount = 0;
+          let totalCount = 0;
+          let unplannedDowntime = 0;
+
+          const goodCountData = telemetry.good_count || [];
+          const totalCountData = telemetry.total_count || [];
+          const downtimeData = telemetry.downtime || [];
+
+          if (goodCountData.length > 0) goodCount = Number(goodCountData[0].value);
+          if (totalCountData.length > 0) totalCount = Number(totalCountData[0].value);
+          if (downtimeData.length > 0) unplannedDowntime = Number(downtimeData[0].value);
+
+          const plannedProductionTime = (shiftEnd - shiftStart) / 1000;
+          const runTime = Math.max(0, plannedProductionTime - unplannedDowntime);
+          
+          const availability = plannedProductionTime > 0 ? runTime / plannedProductionTime : 0;
+          const performance = runTime > 0 ? (idealCycleTime * totalCount) / runTime : 0;
+          const quality = totalCount > 0 ? goodCount / totalCount : 0;
+          const oee = availability * performance * quality;
+
+          history.push({
+            date: day.toISOString().split('T')[0],
+            shiftId: shift.id,
+            shiftName: shift.name,
+            availability: Math.min(1, Math.max(0, availability)),
+            performance: Math.min(1, Math.max(0, performance)),
+            quality: Math.min(1, Math.max(0, quality)),
+            oee: Math.min(1, Math.max(0, oee)),
+            totalGoodCount: goodCount,
+            totalCount: totalCount,
+            unplannedDowntime
+          });
+        }
+      }
+
+      res.json(history);
+    } catch (error: any) {
+      handleRouteError(res, error, "Fetch TB OEE history error");
+    }
+  });
+
   app.get("/api/thingsboard/user", async (req, res) => {
     try {
       const tb = getTBService(req);
@@ -316,6 +388,10 @@ export function setupRoutes(app: Express) {
     res.json(shift);
   });
 
+  app.get("/api/shifts", (req, res) => {
+    res.json(db.shifts);
+  });
+
   app.get("/api/oee/:machineId", (req, res) => {
     const { machineId } = req.params;
     const shift = getCurrentShift();
@@ -334,6 +410,24 @@ export function setupRoutes(app: Express) {
     const { start, end } = getShiftStartEndTimes(shift);
     const oee = calculateFactoryOEE(factoryId, start, end);
     res.json(oee);
+  });
+
+  app.get("/api/oee-history/:machineId", (req, res) => {
+    const { machineId } = req.params;
+    const { startDate, endDate, shiftId } = req.query;
+    if (!startDate || !endDate) return res.status(400).json({ error: "startDate and endDate are required" });
+    
+    const history = calculateHistoricalOEE(machineId, parseISO(startDate as string), parseISO(endDate as string), shiftId as string);
+    res.json(history);
+  });
+
+  app.get("/api/factories/:factoryId/oee-history", (req, res) => {
+    const { factoryId } = req.params;
+    const { startDate, endDate, shiftId } = req.query;
+    if (!startDate || !endDate) return res.status(400).json({ error: "startDate and endDate are required" });
+    
+    const history = calculateFactoryHistoricalOEE(factoryId, parseISO(startDate as string), parseISO(endDate as string), shiftId as string);
+    res.json(history);
   });
 
   app.post("/api/downtime/manual", (req, res) => {
