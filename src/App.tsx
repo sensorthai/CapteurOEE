@@ -206,6 +206,7 @@ const DroppableLine: React.FC<DroppableLineProps> = ({ id, name, machines, t, is
 
 export default function App() {
   const [user, setUser] = useState<any>(null);
+  const isCustomerUser = user?.group === 'Customer Users';
   const [isAuthenticated, setIsAuthenticated] = useState(() => !!localStorage.getItem('tb_token'));
   const [token, setToken] = useState<string | null>(() => localStorage.getItem('tb_token'));
   const [machines, setMachines] = useState<any[]>([]);
@@ -486,6 +487,12 @@ export default function App() {
   const handleDeleteShift = (id: string) => {
     setShifts(shifts.filter(s => s.id !== id));
   };
+
+  useEffect(() => {
+    if (user && isCustomerUser && !['overview', 'dashboard'].includes(currentPage)) {
+      setCurrentPage('overview');
+    }
+  }, [user, isCustomerUser, currentPage]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -773,64 +780,70 @@ export default function App() {
             <Factory className="size-5 shrink-0" />
             {!isSidebarMinimized && <span className="text-sm font-medium animate-in fade-in duration-300">{t.assets}</span>}
           </button>
-          <button 
-            onClick={() => setCurrentPage('maintenance')}
-            className={cn(
-              "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors",
-              isSidebarMinimized ? "justify-center" : "",
-              currentPage === 'maintenance' ? "bg-neutral-800 text-neutral-100" : "text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100"
-            )}
-            title={isSidebarMinimized ? t.maintenance : ""}
-          >
-            <Wrench className="size-5 shrink-0" />
-            {!isSidebarMinimized && <span className="text-sm font-medium animate-in fade-in duration-300">{t.maintenance}</span>}
-          </button>
-          <button 
-            onClick={() => setCurrentPage('analytics')}
-            className={cn(
-              "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors",
-              isSidebarMinimized ? "justify-center" : "",
-              currentPage === 'analytics' ? "bg-neutral-800 text-neutral-100" : "text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100"
-            )}
-            title={isSidebarMinimized ? t.analytics : ""}
-          >
-            <BarChart2 className="size-5 shrink-0" />
-            {!isSidebarMinimized && <span className="text-sm font-medium animate-in fade-in duration-300">{t.analytics}</span>}
-          </button>
-          <button 
-            onClick={() => setCurrentPage('downtime')}
-            className={cn(
-              "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors",
-              isSidebarMinimized ? "justify-center" : "",
-              currentPage === 'downtime' ? "bg-neutral-800 text-neutral-100" : "text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100"
-            )}
-            title={isSidebarMinimized ? t.downtime : ""}
-          >
-            <TimerOff className="size-5 shrink-0" />
-            {!isSidebarMinimized && <span className="text-sm font-medium animate-in fade-in duration-300">{t.downtime}</span>}
-          </button>
-          <button 
-            onClick={() => setCurrentPage('settings')}
-            className={cn(
-              "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors",
-              isSidebarMinimized ? "justify-center" : "",
-              currentPage === 'settings' ? "bg-neutral-800 text-neutral-100" : "text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100"
-            )}
-            title={isSidebarMinimized ? t.settings : ""}
-          >
-            <Settings className="size-5 shrink-0" />
-            {!isSidebarMinimized && <span className="text-sm font-medium animate-in fade-in duration-300">{t.settings}</span>}
-          </button>
+          {!isCustomerUser && (
+            <>
+              <button 
+                onClick={() => setCurrentPage('maintenance')}
+                className={cn(
+                  "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors",
+                  isSidebarMinimized ? "justify-center" : "",
+                  currentPage === 'maintenance' ? "bg-neutral-800 text-neutral-100" : "text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100"
+                )}
+                title={isSidebarMinimized ? t.maintenance : ""}
+              >
+                <Wrench className="size-5 shrink-0" />
+                {!isSidebarMinimized && <span className="text-sm font-medium animate-in fade-in duration-300">{t.maintenance}</span>}
+              </button>
+              <button 
+                onClick={() => setCurrentPage('analytics')}
+                className={cn(
+                  "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors",
+                  isSidebarMinimized ? "justify-center" : "",
+                  currentPage === 'analytics' ? "bg-neutral-800 text-neutral-100" : "text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100"
+                )}
+                title={isSidebarMinimized ? t.analytics : ""}
+              >
+                <BarChart2 className="size-5 shrink-0" />
+                {!isSidebarMinimized && <span className="text-sm font-medium animate-in fade-in duration-300">{t.analytics}</span>}
+              </button>
+              <button 
+                onClick={() => setCurrentPage('downtime')}
+                className={cn(
+                  "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors",
+                  isSidebarMinimized ? "justify-center" : "",
+                  currentPage === 'downtime' ? "bg-neutral-800 text-neutral-100" : "text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100"
+                )}
+                title={isSidebarMinimized ? t.downtime : ""}
+              >
+                <TimerOff className="size-5 shrink-0" />
+                {!isSidebarMinimized && <span className="text-sm font-medium animate-in fade-in duration-300">{t.downtime}</span>}
+              </button>
+              <button 
+                onClick={() => setCurrentPage('settings')}
+                className={cn(
+                  "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors",
+                  isSidebarMinimized ? "justify-center" : "",
+                  currentPage === 'settings' ? "bg-neutral-800 text-neutral-100" : "text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100"
+                )}
+                title={isSidebarMinimized ? t.settings : ""}
+              >
+                <Settings className="size-5 shrink-0" />
+                {!isSidebarMinimized && <span className="text-sm font-medium animate-in fade-in duration-300">{t.settings}</span>}
+              </button>
+            </>
+          )}
         </nav>
         
         <div className="p-4 border-t border-neutral-800 space-y-2">
-          <button className={cn(
-            "w-full flex items-center justify-center gap-2 px-4 py-2 bg-neutral-800 text-neutral-100 rounded-lg text-sm font-bold hover:bg-neutral-700 transition-colors",
-            isSidebarMinimized ? "px-0" : ""
-          )}>
-            <Download className="size-4 shrink-0" />
-            {!isSidebarMinimized && <span className="animate-in fade-in duration-300">{t.exportReport}</span>}
-          </button>
+          {!isCustomerUser && (
+            <button className={cn(
+              "w-full flex items-center justify-center gap-2 px-4 py-2 bg-neutral-800 text-neutral-100 rounded-lg text-sm font-bold hover:bg-neutral-700 transition-colors",
+              isSidebarMinimized ? "px-0" : ""
+            )}>
+              <Download className="size-4 shrink-0" />
+              {!isSidebarMinimized && <span className="animate-in fade-in duration-300">{t.exportReport}</span>}
+            </button>
+          )}
           
           <button 
             onClick={() => setIsSidebarMinimized(!isSidebarMinimized)}
@@ -1198,7 +1211,9 @@ export default function App() {
                       )}
                       onClick={() => {
                         setSelectedEntity({ type: 'machine', id: machine.id });
-                        setCurrentPage('machine-detail');
+                        if (!isCustomerUser) {
+                          setCurrentPage('machine-detail');
+                        }
                       }}
                     >
                       {/* Card Header */}

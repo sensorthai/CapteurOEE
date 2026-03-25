@@ -189,6 +189,7 @@ export const translations = {
     shiftName: 'Shift Name',
     assignedDays: 'Assigned Days',
     addShift: 'Add Shift',
+    noDataAvailable: "No data available for the selected period",
     downtimeReasonsList: {
       machineFailure: "Machine Failure",
       materialShortage: "Material Shortage",
@@ -390,6 +391,7 @@ export const translations = {
     shiftName: 'ชื่อกะ',
     assignedDays: 'วันที่ได้รับมอบหมาย',
     addShift: 'เพิ่มกะ',
+    noDataAvailable: "ไม่มีข้อมูลสำหรับช่วงเวลาที่เลือก",
     downtimeReasonsList: {
       machineFailure: "เครื่องจักรขัดข้อง",
       materialShortage: "ขาดแคลนวัสดุ",
